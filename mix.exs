@@ -2,10 +2,10 @@ defmodule Tar.Mixfile do
   use Mix.Project
 
   def project do
-    [ 
+    [
       app: :tar,
-      version: "0.0.1",
-      deps: deps,
+      version: "0.0.2",
+      deps: deps(),
       source_url: "https://github.com/glejeune/elixir-tar",
       name: "elixir-tar"
     ]
@@ -20,7 +20,7 @@ defmodule Tar.Mixfile do
   # { :foobar, "0.1", git: "https://github.com/elixir-lang/foobar.git" }
   defp deps do
     [
-      { :ex_doc, github: "elixir-lang/ex_doc" } 
+      { :ex_doc, github: "elixir-lang/ex_doc" }
     ]
   end
 end

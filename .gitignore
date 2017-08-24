@@ -3,3 +3,4 @@
 /docs
 erl_crash.dump
 mix.lock
+_build

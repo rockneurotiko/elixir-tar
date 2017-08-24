@@ -1,4 +1,6 @@
 defmodule Tar do
+  # import Record
+
   @author "Gregoire Lejeune <gregoire.lejeune@free.fr>"
   @moduledoc """
   Manipulate tar archive
@@ -7,38 +9,44 @@ defmodule Tar do
 
   Create a tar archive :
 
-      tar = Tar.Archive[ file: "/path/to/archive.tar" ]
-      tar = tar 
+      tar = %Tar.Archive{path: "/path/to/archive.tar"}
+      tar = tar
             |> Tar.add("path/to/file.1", "path/to")
             |> Tar.add("root/to/file.2", "root")
             |> Tar.create()
 
   Extract content of a tar archive
 
-      tar = Tar.Archive[ file: "/path/to/archive.tar" ]
+      tar = %Tar.Archive{path: "/path/to/archive.tar"}
       Tar.extract(tar)
 
   or
 
-      Tar.Archive[ file: "/path/to/archive.tar" ] |> Tar.extract
+      %Tar.Archive{file: "/path/to/archive.tar"} |> Tar.extract
 
   Get informations about the content of a tar archive
 
-      tar = Tar.Archive[ file: "/path/to/archive.tar" ] |> Tar.read
+      tar = %Tar.Archive{path: "/path/to/archive.tar"} |> Tar.read
       number_of_file_in_tar = Tar.count(tar)
       file_info = Tar.get(tar, file_id)
 
   """
 
-  defexception FileError, message: "unknown error", can_retry: false do
-    def full_message(me) do
-      "Tar failed: #{me.message}, retriable: #{me.can_retry}"
+  defmodule FileError do
+    defexception [:message]
+
+    def exception(me) do
+      msg = "Tar failed: #{me.message}, retriable: false"
+      %FileError{message: msg}
     end
   end
 
-  defexception HeaderError, message: "wrong header format", can_retry: false do
-    def full_message(me) do
-      "Tar failed: #{me.message}, retriable: #{me.can_retry}"
+  defmodule HeaderError do
+    defexception [:message]
+
+    def exception(me) do
+      msg = "Tar failed: #{me.message}, retriable: false"
+      %HeaderError{message: msg}
     end
   end
 
@@ -91,61 +99,45 @@ defmodule Tar do
   @tar_record_size 512
   @io_buffer_size  2048*@tar_record_size
 
-  defrecord Header, 
-    name: nil, 
-    mode: nil,
-    uid: nil,
-    gid: nil,
-    size: nil,
-    mtime: nil,
-    chksum: nil,
-    type: nil,
-    linkname: nil,
-    magic: nil,
-    version: nil,
-    uname: nil,
-    gname: nil,
-    devmajor: nil,
-    devminor: nil,
-    prefix: nil
-
-  defrecord Pax, header: nil, data: nil do
-    record_type header: Header.t
-    record_type data: String.t
+  defmodule Header do
+    defstruct name: nil,
+      mode: nil,
+      uid: nil,
+      gid: nil,
+      size: nil,
+      mtime: nil,
+      chksum: nil,
+      type: nil,
+      linkname: nil,
+      magic: nil,
+      version: nil,
+      uname: nil,
+      gname: nil,
+      devmajor: nil,
+      devminor: nil,
+      prefix: nil
   end
 
-  defrecord Entry, pax: nil, has_pax: nil, header: nil, content: nil, archive_path: nil, system_path: nil do
-    record_type pax: Pax.t
-    record_type has_pax: boolean
-    record_type header: Header.t
-    record_type content: any
-    record_type archive_path: String.t
-    record_type system_path: String.t
+  defmodule Pax do
+    defstruct header: nil, data: nil
   end
 
-  defrecord EntryInfo, path: nil, size: nil, type: nil, uname: nil, gname: nil do
-    @moduledoc """
-    Tar entry informations
-    """
-    record_type path: String.t
-    record_type size: number
-    record_type type: String.t
-    record_type uname: String.t
-    record_type gname: String.t
+  defmodule Entry do
+    defstruct pax: nil, has_pax: nil, header: nil, content: nil, archive_path: nil, system_path: nil
   end
-  
-  defrecord Archive, path: nil, entries: [] do
-    @moduledoc """
-    Tar archive
-    """
-    record_type path: String.t
-    record_type entries: [ Entry.t ]
+
+  defmodule EntryInfo do
+    defstruct path: nil, size: nil, type: nil, uname: nil, gname: nil
+  end
+
+  defmodule Archive do
+    defstruct path: nil, entries: []
   end
 
   defp octstring_to_int(x) do
-    Enum.reduce(bitstring_to_list(x), 0, fn(e, acc) -> 
+    Enum.reduce(:erlang.bitstring_to_list(x), 0, fn(e, acc) ->
       if e >= 48 and e <= 55 do
-        (acc * 8) + (e - 48) 
+        (acc * 8) + (e - 48)
       else
         acc
       end
@@ -153,18 +145,18 @@ defmodule Tar do
   end
 
   defp get_checksum(header_data) do
-    result = Enum.reduce(bitstring_to_list(header_data), [0, 0], fn(x, acc) -> 
+    result = Enum.reduce(:erlang.bitstring_to_list(header_data), [0, 0], fn(x, acc) ->
       if Enum.at(acc, 1) < @header_chksum_pos or Enum.at(acc, 1) >= @header_chksum_pos + @header_chksum_size do
         [Enum.at(acc, 0) + x, Enum.at(acc, 1) + 1]
       else
-        [Enum.at(acc, 0) + 0x20, Enum.at(acc, 1) + 1] 
+        [Enum.at(acc, 0) + 0x20, Enum.at(acc, 1) + 1]
       end
     end)
     Enum.at(result, 0)
   end
 
   defp parse_header(data) do
-    Tar.Header[
+    %Tar.Header{
       name: String.slice(data, @header_name_pos, @header_name_size),
       mode: String.slice(data, @header_mode_pos, @header_mode_size),
       uid: String.slice(data, @header_uid_pos, @header_uid_size),
@@ -181,7 +173,7 @@ defmodule Tar do
       devmajor: String.slice(data, @header_devmajor_pos, @header_devmajor_size),
       devminor: String.slice(data, @header_devminor_pos, @header_devminor_size),
       prefix: String.slice(data, @header_prefix_pos, @header_prefix_size)
-    ]
+    }
   end
 
   defp verify_checksum(data, chksum) do
@@ -195,7 +187,7 @@ defmodule Tar do
   def extract(archive, path) do
     {status, io} = File.open(archive.path, [:read])
     if :error == status do
-      raise Tar.FileError, message: io
+      raise Tar.FileError, io
     end
 
     extract_entry(io, path)
@@ -209,9 +201,9 @@ defmodule Tar do
   defp extract_entry(io, path) do
     data = IO.read(io, @header_size)
     case data do
-      {:error, reason} -> raise Tar.FileError, message: data
+      {:error, reason} -> raise Tar.FileError, data
       :eof -> nil
-      _ -> ( 
+      _ -> (
         if String.length(String.strip(data, 0)) > 0 do
           perform_extract_entry(io, path, data)
         else
@@ -224,16 +216,19 @@ defmodule Tar do
   defp perform_extract_entry(io, path, data) do
     header = parse_header(data)
     unless verify_checksum(data, header.chksum) do
-      raise Tar.HeaderError, message: "Invalid checksum"
+      raise Tar.HeaderError, "Invalid checksum"
     end
 
     case header.type do
       @tar_normal_file -> (
-        file_size = octstring_to_int(header.size)
-        output_path = path
-        if String.length(String.strip(header.prefix, 0)) > 0 do
-          output_path = Path.join(output_path, String.strip(header.prefix, 0))
+      file_size = octstring_to_int(header.size)
+
+        output_path = if String.length(String.strip(header.prefix, 0)) > 0 do
+          Path.join(path, String.strip(header.prefix, 0))
+        else
+          path
         end
+
         output_path = Path.absname(Path.join(output_path, String.strip(header.name, 0)))
         output_parent_path = Path.dirname(output_path)
         unless File.exists?(output_parent_path) do
@@ -253,27 +248,27 @@ defmodule Tar do
           File.mkdir_p!(output_path)
         end
       )
-      @tar_pax_extension -> ( 
+      @tar_pax_extension -> (
         pax = read_pax_data(io, octstring_to_int(header.size))
         output_path = path
 
         data = IO.read(io, @header_size)
         case data do
-          {:error, reason} -> raise Tar.FileError, message: data
-          :eof -> raise Tar.FileError, message: "Unexpected end of file"
-          _ -> ( 
+          {:error, reason} -> raise Tar.FileError, data
+          :eof -> raise Tar.FileError, "Unexpected end of file"
+          _ -> (
             if String.length(String.strip(data, 0)) <= 0 do
-              raise Tar.FileError, message: "Unexpected empty header"
+              raise Tar.FileError, "Unexpected empty header"
             end
           )
         end
 
         header = parse_header(data)
         unless verify_checksum(data, header.chksum) do
-          raise Tar.HeaderError, message: "Invalid checksum"
+          raise Tar.HeaderError, "Invalid checksum"
         end
 
-        if nil == pax["path"] or 0 < size(pax["path"]) do
+        if nil == pax["path"] or 0 < :erlang.size(pax["path"]) do
           output_path = Path.absname(Path.join(output_path, pax["path"]))
         else
           if String.length(String.strip(header.prefix, 0)) > 0 do
@@ -295,7 +290,7 @@ defmodule Tar do
           _ -> nil # TODO: This can't be so simple !
         end
       )
-      @tar_gpax_extension -> ( 
+      @tar_gpax_extension -> (
         # TODO but not now !
         IO.warn "Global PAX not yet supported!"
       )
@@ -313,20 +308,20 @@ defmodule Tar do
 
   defp read_pax_data(io, size) do
     data = read_pax_data(io, size, "")
-    List.foldl String.split(data, %r/\n/), HashDict.new, fn (line, acc) ->
+    List.foldl String.split(data, "\n"), HashDict.new, fn (line, acc) ->
       unless line == "" do
         cut_pos = Enum.find_index(String.graphemes(line), fn(x) -> x == " " end)
         if nil == cut_pos do
-          raise Tar.FileError, message: "Malformated PAX data"
+          raise Tar.FileError, "Malformated PAX data"
         end
 
         {len, _} = String.to_integer(String.slice(line, 0, cut_pos))
-        line_data = String.slice(line, cut_pos+1, size(line))
-        if len != size(line)+1 do
-          raise Tar.FileError, message: "Malformated PAX data"
+        line_data = String.slice(line, cut_pos+1, :erlang.size(line))
+        if len != :erlang.size(line)+1 do
+          raise Tar.FileError, "Malformated PAX data"
         end
 
-        [key, value] = String.split(line_data, %r/=/, global: false)
+        [key, value] = String.split(line_data, "=", global: false)
         Dict.put(acc, key, value)
       else
         acc
@@ -342,13 +337,13 @@ defmodule Tar do
 
     new_data = IO.read(io, read_size)
     case new_data do
-      {:error, reason} -> raise Tar.FileError, message: reason
+      {:error, reason} -> raise Tar.FileError, reason
       _ -> data = data <> new_data
     end
 
     if read_size < @tar_record_size do
       case IO.read(io, @tar_record_size - read_size) do
-        {:error, reason} -> raise Tar.FileError, message: reason
+        {:error, reason} -> raise Tar.FileError, reason
         _ -> nil
       end
     end
@@ -374,12 +369,12 @@ defmodule Tar do
 
     data = IO.binread(io, read_bytes)
     case data do
-      {:error, reason} -> raise Tar.FileError, message: data
+      {:error, reason} -> raise Tar.FileError, data
       _ -> nil
     end
 
     case IO.binwrite(oio, :binary.part(data, {0, write_data})) do
-      {:error, reason} -> raise Tar.FileError, message: data
+      {:error, reason} -> raise Tar.FileError, data
       _ -> nil
     end
 
@@ -393,13 +388,13 @@ defmodule Tar do
   defp extract_file(io, filename, size) do
     {status, oio} = File.open(filename, [:write])
     if :error == status do
-      raise Tar.FileError, message: io
+      raise Tar.FileError, io
     end
 
     extract_data(io, oio, size)
 
     case File.close(oio) do
-      {:error, reason} -> raise Tar.FileError, message: reason
+      {:error, reason} -> raise Tar.FileError, reason
       _ -> nil
     end
   end
@@ -448,7 +443,7 @@ defmodule Tar do
     # TODO
     archive
   end
-  def add(archive, file) do 
+  def add(archive, file) do
     add(archive, file, "")
   end
 end
